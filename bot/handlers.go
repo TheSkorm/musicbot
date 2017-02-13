@@ -19,6 +19,7 @@ var usage = `
 #state# - Get player state
 #vol|volume# - Get current volume level
 #vol|volume up|down|0-100# - Set volume level
+#single# - Plays a single song
 `
 
 func setupCommands(bot *Bot) {
@@ -30,6 +31,7 @@ func setupCommands(bot *Bot) {
 	bot.addCommand("^stop$", Stop)
 	bot.addCommand("^play$", Resume)
 	bot.addCommand("^play (.*)", Play)
+	bot.addCommand("^single (.*)", Play_First)
 	bot.addCommand("^(tracks|list)$", Tracks)
 	bot.addCommand("^clear$", Clear)
 	bot.addCommand("^state$", State)
@@ -152,7 +154,57 @@ func Play(bot *Bot, match *Match) {
 	opts := spotify.SearchOptions{
 		Query: query,
 		Type:  "track",
-		Limit: 10,
+		Limit: 5,
+	}
+
+	result, err := spotify.Search(opts)
+	if err != nil {
+		fmt.Println(err)
+		bot.Say("_Spotify search failed_")
+		return
+	}
+
+	if len(result.Tracks.Items) == 0 {
+		bot.Say("Nothing found for: " + query)
+		return
+	}
+
+	// If player is stopped we should clear old track list so that playback will s
+	// start with only new tracks. This is needed to keep the track list small.
+	state, _ := bot.mopidy.State()
+	if state == "stopped" {
+		bot.mopidy.ClearTracklist()
+	}
+
+	err = bot.mopidy.AddSpotifyTracks(result.Tracks.Items)
+	if err != nil {
+		bot.Say("Cant add tracks to the queue")
+		return
+	}
+
+	// Start playback only if player is stopped.
+	state, _ = bot.mopidy.State()
+	if state == "stopped" {
+		bot.mopidy.Play()
+	}
+
+	// Build a string that only includes 10 tracks. Its a dirty hack to make sure
+	// that amount of data sent to slack stays low, otherwise slack will terminate
+	// websocket connection. TODO: need a better way of handing this.
+	lines := make([]string, len(result.Tracks.Items))
+	for i, track := range result.Tracks.Items {
+		lines[i] = fmt.Sprintf("%v. %s - %s", i+1, track.Name, track.Album.Name)
+	}
+
+	bot.Say("Added tracks:\n" + strings.Join(lines, "\n"))
+}
+func Play_First(bot *Bot, match *Match) {
+	query := match.Values[0]
+
+	opts := spotify.SearchOptions{
+		Query: query,
+		Type:  "track",
+		Limit: 1,
 	}
 
 	result, err := spotify.Search(opts)

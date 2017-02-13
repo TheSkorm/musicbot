@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-
+        "./bot"
 	"github.com/jessevdk/go-flags"
-	"github.com/sosedoff/musicbot/bot"
 )
 
 const version = "0.1.0"
